@@ -1,13 +1,16 @@
 import streamlit as st
-import numpy as np
+from streamlit_option_menu import option_menu
 import pandas as pd
+import numpy as np
 import plotly.express as px
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from sklearn.linear_model import LinearRegression
+
+# Set page configuration
+st.set_page_config(page_title="Dengue Early Warning System for Bangladesh(DEWS-BD)",
+                   layout="wide",
+                   page_icon="🧑‍⚕️")
+
 
 # Define a list of districts
 bangladesh_districts = [
@@ -28,71 +31,28 @@ data = pd.DataFrame({
     'Predicted': predicted_data
 })
 
-# Normalize data for LSTM
-scaler = MinMaxScaler(feature_range=(0, 1))
-data_scaled = scaler.fit_transform(data[['Actual']].values.reshape(-1, 1))
+# App title
+st.title('Dengue Early Warning System for Bangladesh(DEWS-BD)')
 
-# Prepare data for LSTM
-def create_dataset(dataset, look_back=1):
-    dataX, dataY = [], []
-    for i in range(len(dataset)-look_back-1):
-        a = dataset[i:(i+look_back), 0]
-        dataX.append(a)
-        dataY.append(dataset[i + look_back, 0])
-    return np.array(dataX), np.array(dataY)
-
-look_back = 1
-trainX, trainY = create_dataset(data_scaled, look_back)
-trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
-
-# LSTM Model Initialization
-def train_lstm(trainX, trainY):
-    model = Sequential()
-    model.add(LSTM(50, input_shape=(1, look_back)))
-    model.add(Dense(1))
-    model.compile(loss='mean_squared_error', optimizer='adam')
-    model.fit(trainX, trainY, epochs=100, batch_size=1, verbose=0)
-    return model
-
-lstm_model = train_lstm(trainX, trainY)
-
-# Streamlit UI
-st.title('Dengue Outbreak Prediction in Bangladesh')
-
-# Sidebar for district and model selection
+# Sidebar for district selection
+st.sidebar.title("DEWS-BD")  # Sidebar title
 district = st.sidebar.selectbox('Select District:', bangladesh_districts)
-model_choice = st.sidebar.radio("Choose the model:", ('SARIMAX', 'LSTM', 'Holt-Winters'))
 
-# Month selection for prediction
-selected_month = st.sidebar.selectbox('Select Month:', [m for m in pd.date_range(start='2024-01-01', periods=12, freq='M').month_name()])
+# Filter data based on district if your data supports it; here it's static for demo
+# Assuming data doesn't actually vary by district in this example
 
-# Display line chart
+# Line chart using Plotly
 fig = px.line(data, x='Date', y=['Actual', 'Predicted'], title=f'Dengue Patient Count Forecast for {district}')
 st.plotly_chart(fig)
 
-# Prediction logic based on model choice
-if st.button('Show Predictions'):
-    if model_choice == 'SARIMAX':
-        model = SARIMAX(data['Actual'], order=(1, 1, 1), seasonal_order=(1, 1, 1, 12))
-        model_fit = model.fit(disp=False)
-        predictions = model_fit.forecast(steps=12)
-    elif model_choice == 'LSTM':
-        last_values = np.array([data_scaled[-1]])
-        last_values = last_values.reshape(1, 1, 1)
-        predictions = lstm_model.predict(last_values)
-        predictions = scaler.inverse_transform(predictions)
-    elif model_choice == 'Holt-Winters':
-        model = ExponentialSmoothing(data['Actual'], seasonal='add', seasonal_periods=12)
-        model_fit = model.fit()
-        predictions = model_fit.forecast(steps=12)
-    
-    # Filter predictions for the selected month
-    month_index = pd.date_range(start='2024-01-01', periods=12, freq='M').month_name().tolist().index(selected_month)
-    selected_prediction = predictions[month_index]
+# Model evaluation
+rmse = np.sqrt(mean_squared_error(data['Actual'], data['Predicted']))
+st.write(f"Root Mean Square Error (RMSE): {rmse:.2f}")
 
-    st.write(f"Forecast for {selected_month} using {model_choice}: {selected_prediction}")
+# Prediction for a specific month
+month_to_predict = st.sidebar.selectbox('Select Month:', data['Date'].dt.month_name().unique())
+filtered_data = data[data['Date'].dt.month_name() == month_to_predict]
+prediction = filtered_data['Predicted'].mean()
+st.sidebar.write(f'Prediction for {month_to_predict}: {int(prediction)}')
 
-# Display RMSE for evaluation
-if model_choice != 'LSTM':  # LSTM needs different handling for RMSE due to scaling
-    rmse = np.sqrt(mean_squared_error(data['Actual'], data['Predicted']))
-    st.write(f"Root Mean Square Error (RMSE): {rmse:.2f}")
+# To run this app, save the code in a file app.py and run `streamlit run app.py`
